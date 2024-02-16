@@ -41,7 +41,7 @@ pipeline {
             steps {
                 
                 // Construir y validar recursos serverless
-				sh 'sam validate --region us-east-1'
+		sh 'sam validate --region us-east-1'
                 sh 'sam build --template template.yaml'
  
                 // Desplegar recursos serverless en entorno de Staging
