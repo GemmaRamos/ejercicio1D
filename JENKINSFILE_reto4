@@ -1,0 +1,66 @@
+pipeline {
+    agent any
+    
+    environment {
+        PYTHONPATH = "$WORKSPACE"
+    }
+
+    stages {
+        stage('Get Code') {
+            steps {
+                // Obtener código del repositorio
+                git branch: 'master', 
+                url: 'https://github.com/GemmaRamos/ejercicio1D.git'
+                
+                // Descargar el archivo samconfig.toml de la rama production
+                sh 'curl -O https://raw.githubusercontent.com/GemmaRamos/ejercicio1D-config/production/samconfig.toml'
+            }
+        }
+        
+        
+        stage('Deploy') {
+            steps {
+                
+                // Construir y validar recursos serverless
+				sh 'sam validate --region us-east-1'
+                sh 'sam build --template template.yaml'
+ 
+
+                // Desplegar recursos serverless en entorno de Produccion
+                sh 'sam deploy --config-file samconfig.toml'
+ 
+            }
+        }
+        
+        
+        stage('Rest Test') {
+            steps {
+                catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
+                    script {
+                        // Obtener el BASE_URL desde el resultado de AWS CLI
+                        def BASE_URL = sh(
+                            script: "aws cloudformation describe-stacks --stack-name todo-list-aws-production --query 'Stacks[0].Outputs[?OutputKey==`BaseUrlApi`].OutputValue' --region us-east-1 --output text",
+                            returnStdout: true
+                        ).trim() // Eliminar espacios en blanco alrededor del resultado
+        
+                        echo "BASE_URL: $BASE_URL"
+        
+                        // Establecer la variable de entorno BASE_URL
+                        withEnv(["BASE_URL=${BASE_URL}"]) {
+                            // Ejecutar solo las pruebas de lectura
+                            sh "pytest -s --junitxml=result-rest.xml -k 'setUp or test_api_listtodos or test_api_gettodo' test/integration/todoApiTest.py"
+                            junit 'result*.xml'
+                        }
+                    }
+                }
+            }
+        }
+    }
+     
+    post { 
+        always { 
+            // Limpiar Workspace
+            cleanWs()
+        }
+    }
+}
